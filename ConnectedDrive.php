@@ -60,7 +60,7 @@ class ConnectedDrive
       if (!$data)
         throw new Exception('No data provided for POST/PUT methods');
 
-      if (!$this->auth->token) {
+      if ($this->auth->expires < time()) {
         $data_str = http_build_query($data);
       } else {
         $data_str = json_encode($data);
