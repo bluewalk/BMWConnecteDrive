@@ -16,6 +16,7 @@ class ConnectedDrive
   private static $VEHILCE_INFO = '/dynamic/v1/%s';
   private static $REMOTESERVICES_STATUS = '/remoteservices/v1/%s/state/execution';
   private static $NAVIGATION_INFO = '/navigation/v1/%s';
+  private static $EFFICIENCY = '/efficiency/v1/%s';
 
   public function  __construct($config = null) {
     if (!$config)
@@ -164,6 +165,15 @@ class ConnectedDrive
     $this->_checkAuth();
 
     $result = $this->_request($this->api_url . sprintf($this::$NAVIGATION_INFO, $this->config->vin));
+
+    return json_decode($result->body);
+  }
+
+  public function getEfficiency()
+  {
+    $this->_checkAuth();
+
+    $result = $this->_request($this->api_url . sprintf($this::$EFFICIENCY, $this->config->vin));
 
     return json_decode($result->body);
   }
