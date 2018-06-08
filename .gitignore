@@ -68,3 +68,6 @@ fabric.properties
 
 # Sonarlint plugin
 .idea/sonarlint
+
+# App json files
+*.sjon
