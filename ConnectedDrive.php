@@ -5,7 +5,8 @@ namespace net\bluewalk\connecteddrive;
 class ConnectedDrive
 {
   private $auth_url = 'https://customer.bmwgroup.com/gcdm/oauth/authenticate';
-  private $api_url = 'https://www.bmw-connecteddrive.nl/api/vehicle';
+  private $api_url = 'https://b2vapi.bmwgroup.com/api/vehicle';
+
   private $config = [
     'vin' => '',
     'username' => '',
@@ -83,7 +84,7 @@ class ConnectedDrive
     $response = curl_exec($ch);
 
     if (!$response)
-      throw new \Exception('Unable to retrieve data');
+      throw new \Exception('Unable to retrieve data: ' . curl_error($ch));
 
     // Get response
     $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
