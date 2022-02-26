@@ -5,7 +5,10 @@ namespace net\bluewalk\connecteddrive;
 class ConnectedDrive
 {
   private $auth_url = 'https://customer.bmwgroup.com/gcdm/oauth/authenticate';
+  private $auth_token_url = 'https://customer.bmwgroup.com/gcdm/oauth/token';
   private $api_url = 'https://b2vapi.bmwgroup.com/api/vehicle';
+  private $client_id = '31c357a0-7a1d-4590-aa99-33b97244d048';
+  private $client_password = 'c0e3393d-70a2-4f6f-9d3c-8530af64d552';
 
   private $config = [
     'vin' => '',
@@ -25,7 +28,10 @@ class ConnectedDrive
 
     $this->auth = (object) [
       'token' => '',
-      'expires' => 0
+      'expires' => 0,
+      'refresh_token' => '',
+      'token_type' => 'Bearer',
+      'id_token' => ''
     ];
 
     $this->_loadConfig($config);
@@ -59,7 +65,7 @@ class ConnectedDrive
     // Set POST/PUT data
     if ($method == 'POST' || $method == 'PUT') {
       if (!$data)
-        throw new Exception('No data provided for POST/PUT methods');
+        throw new \Exception('No data provided for POST/PUT methods');
 
       if ($this->auth->expires < time()) {
         $data_str = http_build_query($data);
@@ -107,35 +113,115 @@ class ConnectedDrive
     file_put_contents('auth.json', json_encode($this->auth));
   }
 
+  private function _randomCode($length = 25) {
+    $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-._~';
+    $charactersLength = strlen($characters);
+    $randomString = '';
+    for ($i = 0; $i < $length; $i++) {
+        $randomString .= $characters[rand(0, $charactersLength - 1)];
+    }
+    return $randomString;
+  }
+
+  public function refreshToken() {
+    $headers = [
+      'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
+      'Authorization: Basic ' . base64_encode($this->client_id . ':' . $this->client_password)
+    ];
+
+    $result = $this->_request($this->auth_token_url, 'POST', [
+      'redirect_uri' => 'com.bmw.connected://oauth',
+      'refresh_token' => $this->auth->refresh_token,
+      'grant_type' => 'refresh_token',
+    ], $headers);
+    
+    $token = json_decode($result->body);
+
+    $this->auth->token = $token->access_token;
+    $this->auth->expires = time() + $token->expires_in;
+    $this->auth->refresh_token = $token->refresh_token;
+    $this->auth->id_token = $token->id_token;
+
+    $this->_saveAuth();
+  }
+
   public function getToken() {
     $headers = [
       'Content-Type: application/x-www-form-urlencoded',
-      'User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 11_1_1 like Mac OS X) AppleWebKit/604.3.5 (KHTML, like Gecko) Version/11.0 Mobile/15B150 Safari/604.1'
+      'User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 15_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.3 Mobile/15E148 Safari/604.1'
     ];
 
+    $code_challenge =  $this->_randomCode(86);
+    $state = $this->_randomCode(22);
+
+    // Stage 1 - Request authorization code
     $data = [
+      'client_id' => $this->client_id,
+      'response_type' => 'code',
+      'scope' => 'openid profile email offline_access smacc vehicle_data perseus dlm svds cesim vsapi remote_services fupo authenticate_user',
+      'redirect_uri' => 'com.bmw.connected://oauth',
+      'state' => $state,
+      'nonce' => 'login_nonce',
+      'code_challenge' => $code_challenge,
+      'code_challenge_method' => 'plain',
       'username' => $this->config->username,
       'password' => $this->config->password,
-      'client_id' => 'dbf0a542-ebd1-4ff0-a9a7-55172fbfce35',
-      'response_type' => 'token',
-      'scope' => 'authenticate_user fupo',
-      'state' => 'eyJtYXJrZXQiOiJubCIsImxhbmd1YWdlIjoibmwiLCJkZXN0aW5hdGlvbiI6ImxhbmRpbmdQYWdlIn0',
-      'locale' => 'NL-nl',
-      'redirect_uri' => 'https://www.bmw-connecteddrive.com/app/static/external-dispatch.html'
+      'grant_type' => 'authorization_code'
+    ];
+
+    $result = $this->_request($this->auth_url, 'POST', $data, $headers);
+    $stage1 = json_decode($result->body);
+
+    if (!preg_match('/.*authorization=(.*)/im', $stage1->redirect_to, $matches))
+      throw new \Exception('Unable to get authorization token at Stage 1');
+
+    // Stage 2 - No idea, it's required to get the code
+    $authorization = $matches[1];
+
+    $headers[] = 'Cookie: GCDMSSO=' . $authorization;
+
+    $data = [
+      'client_id' => $this->client_id,
+      'response_type' => 'code',
+      'scope' => 'openid profile email offline_access smacc vehicle_data perseus dlm svds cesim vsapi remote_services fupo authenticate_user',
+      'redirect_uri' => 'com.bmw.connected://oauth',
+      'state' => $state,
+      'nonce' => 'login_nonce',
+      'code_challenge'=> $code_challenge,
+      'code_challenge_method' => 'plain',
+      'authorization' => $authorization
     ];
 
     $result = $this->_request($this->auth_url, 'POST', $data, $headers);
 
-    if (preg_match('/.*access_token=([\w\d]+).*token_type=(\w+).*expires_in=(\d+).*/im', $result->headers, $matches)) {
-      $this->auth->token = $matches[1];
-      $this->auth->expires = time() + $matches[3];
+    if (!preg_match('/.*location:.*code=(.*?)&/im', $result->headers, $matches))
+      throw new \Exception('Unable to get authorization token at Stage 2');
 
-      $this->_saveAuth();
+    $code = $matches[1];
 
-      return true;
-    }
+    // Stage 3 - Get token
+    $headers = [
+      'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
+      'Authorization: Basic ' . base64_encode($this->client_id . ':' . $this->client_password)
+    ];
 
-    throw new \Exception('Unable to get authorization token');
+    $result = $this->_request($this->auth_token_url, 'POST', [
+      'code' => $code,
+      'code_verifier' => $code_challenge,
+      'redirect_uri' => 'com.bmw.connected://oauth',
+      'grant_type' => 'authorization_code',
+    ], $headers);
+    
+    $token = json_decode($result->body);
+
+    $this->auth->token = $token->access_token;
+    $this->auth->expires = time() + $token->expires_in;
+    $this->auth->refresh_token = $token->refresh_token;
+    $this->auth->id_token = $token->id_token;
+
+    $this->_saveAuth();
+
+    return true;
   }
 
   private function _checkAuth() {
@@ -143,7 +229,7 @@ class ConnectedDrive
       return $this->getToken();
 
     if ($this->auth->token && time() > $this->auth->expires)
-      return $this->getToken();
+      return $this->refreshToken();
   }
 
   public function getInfo() {
