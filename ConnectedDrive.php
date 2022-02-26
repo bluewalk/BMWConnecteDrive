@@ -10,6 +10,11 @@ class ConnectedDrive
   private $client_id = '31c357a0-7a1d-4590-aa99-33b97244d048';
   private $client_password = 'c0e3393d-70a2-4f6f-9d3c-8530af64d552';
 
+  private $api2_url = 'https://cocoapi.bmwgroup.com';
+
+  private static $VEHILCE_INFO = '/dynamic/v1/%s';
+  private static $VEHICLES = '/eadrax-vcs/v1/vehicles?apptimezone=%s&appDateTime=%s&tireGuardMode=ENABLED';
+
   private $config = [
     'vin' => '',
     'username' => '',
@@ -17,10 +22,6 @@ class ConnectedDrive
   ];
   private $auth;
 
-  private static $VEHILCE_INFO = '/dynamic/v1/%s';
-  private static $REMOTESERVICES_STATUS = '/remoteservices/v1/%s/state/execution';
-  private static $NAVIGATION_INFO = '/navigation/v1/%s';
-  private static $EFFICIENCY = '/efficiency/v1/%s';
 
   public function  __construct($config = null) {
     if (!$config)
@@ -240,27 +241,15 @@ class ConnectedDrive
     return json_decode($result->body);
   }
 
-  public function getRemoteServicesStatus() {
+  // This is using the new api, old api's are depricated (New BMW app) 
+  public function getVehicles() {
     $this->_checkAuth();
 
-    $result = $this->_request($this->api_url . sprintf($this::$REMOTESERVICES_STATUS, $this->config->vin), 'GET', null, ['Accept: application/json']);
+    $headers = [
+      'x-user-agent: android(v1.07_20200330);bmw;1.7.0(11152)'
+    ];
 
-    return json_decode($result->body);
-  }
-
-  public function getNavigationInfo() {
-    $this->_checkAuth();
-
-    $result = $this->_request($this->api_url . sprintf($this::$NAVIGATION_INFO, $this->config->vin));
-
-    return json_decode($result->body);
-  }
-
-  public function getEfficiency()
-  {
-    $this->_checkAuth();
-
-    $result = $this->_request($this->api_url . sprintf($this::$EFFICIENCY, $this->config->vin));
+    $result = $this->_request($this->api2_url . sprintf($this::$VEHICLES, (new \DateTime())->getOffset(), time()), 'GET', null, $headers);
 
     return json_decode($result->body);
   }
