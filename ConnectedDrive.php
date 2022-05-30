@@ -246,7 +246,7 @@ class ConnectedDrive
     $this->_checkAuth();
 
     $headers = [
-      'x-user-agent: android(v1.07_20200330);bmw;1.7.0(11152)'
+      'x-user-agent: android(SP1A.210812.016.C1);bmw;2.5.2(14945)'
     ];
 
     $result = $this->_request($this->api2_url . sprintf($this::$VEHICLES, (new \DateTime())->getOffset(), time()), 'GET', null, $headers);
